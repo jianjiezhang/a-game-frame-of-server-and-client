@@ -1,0 +1,62 @@
+1.对于一个模块的格式
+（1）一个模块由一个文件实现，文件名=模块名，例如mod_scene模块，则有mod_scene.lua
+（2）该文件内只包含四个部分：
+第一部分：模块声明
+例如mod_scene = {}
+第二部分：模块内提供给函数用的上值upvalues
+第三部分：模块局部函数，所有对模块内上值upvalues的增删改查都需要通过这类local 函数来操作
+第四部分：提供模块外调用的函数
+例子如下：
+mod_scene = {}
+
+local __scenes = {}
+
+local function add_scene(scene)
+    --操作__scenes增加场景
+end
+local function create_scene(...)
+    --创建场景
+    --add_scene(scene)
+end
+local function del_scene(id)
+    --删除__scenes
+end
+local function get_scene(id)
+    --查场景
+end
+local function set_scene(id, ...)
+    --根据参数修改指定场景数据
+end
+
+function mod_scene.add_scene(id, ...)
+    --调用local 函数操作
+end
+function mod_scene.refresh()
+end
+
+return mod_scene
+
+2.loader.lua中做了不少调整
+（1）_G加上了元表，对于其他模块直接调用即可，_G会自动require
+（2）实现加载多个基础库，stdin就是自己写来日常开发的基础库
+（3）require提前设置"system"的回调skynet.dispatch_system
+
+3.对于新建一个服务
+（1）运行skynet.newservice(文件名)，launcher会给该新建的服务发送system消息运行skynet.init，因此服务的init函数会作为第一个函数被调用
+（2）一个服务也是一个模块，但是该模块的init函数会作为该服务第一个被运行的函数，可以在里面进行服务的初始化和lua函数，定时器的初始化。
+（3）由于这个文件在其他服务中也有可能被当成模块来使用，因此模块的init函数定义，需要判断SERVICE_NAME是否等于服务名，只有等于的情况下才可以运行，不等于代表只是模块
+
+4.config.lua文件中规定了所有服务和模块的查找路径
+5.game.lua作为整个服务器程序的启动文件
+6.client文件夹下的client2是一个简单客户端程序，用于和服务端交互
+7.adm.lua服务，提供一个入口，给外部查看和管理整个服务器，也就是用于debug
+8.db文件夹存放业务也可以调用的db库
+9.服务器架构是
+（1）客户端
+（2）网关
+（3）role服务
+（4）服务器其他服务：业务公共服务+管理公共服务
+（5）跨服机制（未做）
+（6）跨服场景（未做）
+
+

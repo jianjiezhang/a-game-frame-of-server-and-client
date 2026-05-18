@@ -1,0 +1,56 @@
+---
+description: Unity 客户端工程布局、XLua、网络线程、Lua 脚本与场景层级约定
+globs: client_project/**/*
+alwaysApply: false
+---
+
+# Unity 客户端（client_project）架构约定
+
+## 工程定位
+
+- **`client_project/`** 为正式客户端 **Unity 工程根目录**（不再以 `game/client` 下建议客户端为主力开发目标）。
+
+## C#（`Assets/Scripts/`）
+
+- **`GameStart.cs`**：挂在场景 **`GameStart`** 空物体上，作为 **启动入口**（先于业务初始化）。
+- **`Main.cs`**（计划）：C# 业务主逻辑 — 创建并持有 **XLua 虚拟机**，驱动客户端业务层；在 **`Update`** 中每帧驱动 Lua 侧 `Update`（及定时器分发，见下）。
+- **`NetThread`**（计划）：独立网络线程 — 从 **发送队列** 取消息发往服务端，将收到的数据放入 **接收队列**；与主线程通过队列交互，避免阻塞渲染与 Lua。
+- **`Net.cs`**（计划）：对 **`Main.cs`** 暴露的网络 API（入队发送、取接收、连接状态等），内部与 `NetThread` 协作。
+
+## Lua（`Assets/ScriptLua/`）
+
+- **`Main.lua`**（文件名大小写统一为 **`Main.lua`**）：Lua 虚拟机 **启动脚本**，由 **`Main.cs`** `require`；其中 **`update(dt)`** 每帧由 **`Main.Update`** 调用；**`timer.dispatch`** 在 `update` 内执行。
+- **`Proto.lua`**：协议配置，必须与服务端 **`game/skynet_lib/Proto.lua`** **保持完全一致**；任一端修改须 **双端同时改**。
+- **`minheap.lua`**：最小堆实现，供定时器等使用。
+- **`timer.lua`**：定时器排序与调度；需由 **`Main.lua`** 在每帧（或统一 tick）调用 **`timer` 的 `dispatch` 接口**（与 C# `Update` 对齐）。
+
+## 资源预设（`Assets/Resource/`）
+
+| 预设 | 含义 |
+|------|------|
+| Boss | 场景中 Boss 怪物 |
+| common_monster | 普通怪物 |
+| login_panel | 登录界面 |
+| proto_panel | 场景初始化即存在的 **手动发协议** 调试 UI |
+| tankFbx | 坦克 |
+| troop | 部队对象 |
+
+## 场景层级
+
+1. **`GameStart`**（空物体）  
+   - 挂载 **`GameStart.cs`**。
+
+2. **`Scene`**  
+   - 场景实体父节点。初始子级：**`Main Camera`**、**`Directional Light`**、**`Terrain`**（空）、**`monster`**（空）、**`npc`**（空）。  
+   - **`Terrain`** 下 **4 个地块**子物体；整体地图约 **(0,0)–(2000,2000)** 正方形范围。  
+   - **Boss / common_monster** 实例挂在 **`monster`** 下。  
+   - **npc** 预设挂在 **`npc`** 下。
+
+3. **`ALLUI`**（空物体）  
+   - 子级：**`Canvas`**、**`EventSystem`**。  
+   - **`Canvas`** → **`UI`**（空）：后续 **UI 预设** 均放在此节点下。  
+   - **`Canvas`** → **`Proto`**（空）→ **`proto_panel`**：手动发协议面板；其下 **`protofield`**（InputField）、**`btn_send`**（按钮）。
+
+## 协作提示
+
+- 协议、网关行为、模块号与 **`game/`** 服务端联调时，优先阅读 **`game/.cursor/skills/add-protocol/SKILL.md`**，并同步 **`Proto.lua`**（服务端 `skynet_lib` 与客户端 `ScriptLua` 两处必一致；若仍维护 `game/client` 联调客户端则见该 Skill）。

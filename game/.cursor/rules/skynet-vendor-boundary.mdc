@@ -1,0 +1,19 @@
+---
+description: Which skynet/ subtrees are authoritative vs vendored Lua to ignore for edits
+alwaysApply: true
+---
+
+# Skynet tree vs 本项目代码
+
+在 `skynet/` 目录下，**以构建与 C/Lua 绑定为准、需要保留**的是：
+
+- `skynet-src/`
+- `service-src/`
+- `lualib-src/`
+- `3rd/`
+
+**不要**把 `skynet/lualib/`、`skynet/service/` 等上游自带的 **Lua** 当作本项目的实现来源；业务与替代逻辑应写在仓库自有目录，例如：
+
+`db/`、`debug_console/`、`conf/`、`role/`、`world/`、`skynet_clib/`、`skynet_lib/`、`skynet_service/`、`sq/`、项目根下的 `config`、`game.lua` 等。
+
+改 Skynet 行为、loader、launcher、各服务脚本时，**优先改上述自有路径**；除非明确要做引擎升级或对齐上游，否则避免在 `skynet/lualib`、`skynet/service` 里堆业务改动。

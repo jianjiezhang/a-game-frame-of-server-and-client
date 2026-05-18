@@ -1,0 +1,122 @@
+---
+name: database-conventions
+description: >-
+  数据库表操作规范。本规则约束新增/修改数据库表时的 db_conf.lua 配置、
+  SQL 语句生成、热更新脚本编写。当涉及数据库字段变更时必须遵循本规则。
+---
+
+# 数据库操作规范
+
+## 核心原则
+
+1. **双写一致**：`db_conf.lua` 配置与 `game/sql/` 下的 SQL 文件必须同步更新
+2. **值外部赋值**：主键等业务主键不采用自增，由外部赋值
+3. **无外键约束**：仅使用主键索引，不使用外键或唯一键索引
+4. **手动执行 SQL**：AI 生成的 SQL 写入 `hotup.sql`，由用户手动执行
+
+---
+
+## 类型映射表
+
+### 数值类型
+
+| db_conf.lua 类型 | MySQL 类型 | 说明 |
+|-----------------|-----------|------|
+| `uint8` | `tinyint unsigned` | 1 字节无符号，范围 0~255 |
+| `uint16` | `smallint unsigned` | 2 字节无符号，范围 0~65535 |
+| `uint32` | `int unsigned` | 4 字节无符号 |
+| `uint64` | `bigint unsigned` | 8 字节无符号 |
+| `float` | `float` | 32 位浮点数 |
+
+### 字符串类型
+
+| db_conf.lua 类型 | MySQL 类型 | 说明 |
+|-----------------|-----------|------|
+| `string(n)` 或 `mixed(n)`（n < 256） | `char(n)` | 定长字符串，不足部分补空格 |
+| `string(n)` 或 `mixed(n)`（n ≥ 256） | `varchar(n)` | 变长字符串 |
+
+### 二进制类型
+
+| db_conf.lua 类型 | MySQL 类型 | 说明 |
+|-----------------|-----------|------|
+| `blob` | `blob` | 二进制，最大 64KB |
+| `tinyblob` | `tinyblob` | 二进制，最大 256 字节 |
+| `mediumblob` | `mediumblob` | 二进制，最大 16MB |
+| `longblob` | `longblob` | 二进制，最大 4GB |
+
+### 特殊说明
+
+- **`mixed(n)`** 与 **`string(n)`** 在 MySQL 层使用相同类型，区别在于 Lua 层：
+  - `string(n)` → Lua 字符串
+  - `mixed(n)` → Lua 表序列化/反序列化
+
+---
+
+## SQL 书写规范
+
+### CREATE TABLE
+
+```sql
+create table if not exists `表名`
+(
+    `列名` 类型 not null default 默认值,
+    `列名` 类型 not null default 默认值,
+    primary key(`主键列`)
+)engine=innodb;
+```
+
+### 字段默认值
+
+| 类型 | 默认值 |
+|------|--------|
+| 数值类型 | `default 0` |
+| 字符串类型 | `default ""` |
+
+### ALTER TABLE（新增字段）
+
+```sql
+alter table `表名` add column `列名` 类型 not null default 默认值;
+```
+
+### 示例
+
+```sql
+-- 新增表
+create table if not exists `t_item`
+(
+    `id` bigint unsigned not null default 0,
+    `role_id` bigint unsigned not null default 0,
+    `item_id` int unsigned not null default 0,
+    `count` int unsigned not null default 0,
+    `create_time` int unsigned not null default 0,
+    primary key(`id`)
+)engine=innodb;
+
+-- 新增字段
+alter table `t_role` add column `vip_exp` int unsigned not null default 0;
+```
+
+---
+
+## 新增表流程
+
+1. 在 `db/db_conf.lua` 添加配置
+2. 在 `game/sql/game.sql` 或 `game/sql/hotup.sql` 添加 `CREATE TABLE` 或 `ALTER TABLE`
+3. 用户手动执行 SQL 脚本
+
+---
+
+## 变更表流程
+
+1. 修改 `db/db_conf.lua` 中的对应表配置
+2. 在 `game/sql/hotup.sql` 添加 `ALTER TABLE` 语句
+3. 用户手动执行 `hotup.sql`
+
+---
+
+## 注意事项
+
+- **hotup.sql 由用户手动清空**：每次执行后，用户自行决定是否清空
+- **db_conf.lua 的主键定义**：仅供 `db.writes()` / `db.reads()` 接口判断使用，不生成唯一键索引
+- **不要使用自增主键**：主键值由业务层外部赋值
+- **不要使用外键约束**：降低多表耦合

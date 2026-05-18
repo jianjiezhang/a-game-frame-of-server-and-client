@@ -1,0 +1,62 @@
+---
+description: Lua module layout, services, loader, paths — project-owned code only
+alwaysApply: true
+---
+
+# Lua 与项目约定
+
+在 **`world/`**、**`role/`**、**`skynet_lib/`**、**`skynet_service/`**、**`db/`** 等自有目录改 Lua 时，以本文件与仓库现有代码为准。
+
+## 有状态模块（四段式）
+
+新写或大改**带私有状态**的模块时，结构尽量为：
+
+1. 模块表：`name = {}`
+2. **上值**：如 `local __foo = {}`，不对外直接暴露可写表引用
+3. **仅 `local function`** 修改这些上值；对外 API 通过它们间接操作
+4. **`function name.xxx()`** 对外接口，末尾 **`return name`**
+
+文件名与主表名一致（例如 `scene.lua` → 表 `scene`）。
+
+**例外**：**`role/mod_*.lua`** 常是 role 侧 **RPC / 转发**，可以是薄封装，不必强行拆成「大量上值 + 大量 local 改表」；复杂状态仍建议独立模块或独立服务。
+
+## 服务与 `init`
+
+可被 **`skynet.newservice`** 加载、且同一文件也可能被 **`require`** 复用时：**`init`** 以及仅在本服务进程内执行的注册、**`skynet.dispatch`** 等，必须写在 **`if SERVICE_NAME == "<本服务名>" then ... end`** 里，避免被当普通模块加载时误跑。
+
+启动时由 **`skynet.newservice`** 创建服务后，**`skynet_service/launcher.lua`** 里 **`launch_service`** 会向新服务发送 **`"system", "skynet", "init", ...`**，因此 **`S.init`** 会作为该服务内较早执行的入口之一；具体顺序与 **`game.lua`** 里 **`newservice`** 调用顺序一致。
+
+服务生命周期约定：
+
+- 服务启动后应进入 **`init`** 流程完成初始化。
+- 服务需要自我销毁时，统一通过 **`skynet.exit_service`** 触发退出流程。
+- 在执行 **`skynet.exit_service`** 前，应先调用 **`stop`** 完成最终收尾（如落盘、注销、释放资源等），避免直接退出导致状态不一致。
+
+## `skynet_lib/loader.lua`
+
+**`_G`** 带元表：**`skynet.is_conf(key)`** 为真时走 **`config.get(key)`**，否则 **`require(key)`**；随后会 **`require "stdin"`**（日常开发用基础库）。修改 loader 时保持上述语义，不要随意去掉元表或 **`stdin`**，除非已通读所有调用方并有替代方案。
+
+基于上述 loader 约定，模块编写补充规则：
+
+- 在服务脚本里引用同层模块时，优先直接使用全局模块名（如 **`scene_map`**、**`scene_aoi`**），不重复写显式 **`require`**。
+- 每个业务模块提供 **`模块名.init()`**；由服务的 **`init`** 统一调用完成模块初始化。
+- 避免在模块顶层执行会触发配置拉取（`k_*` / `f_*`）的逻辑；这类初始化放到 **`模块名.init()`** 或服务 **`init`** 阶段执行。
+
+## 路径与两个「config」
+
+- **`skynet_lib/config.lua`**：主要是 **sharedata 游戏配置**（**`config.init` / `config.get`** 等），**不是**服务脚本在磁盘上的搜索路径表。
+- 服务脚本 **`S.lua`** 的查找由项目根 **`config`** 里的 **`luaservice`**（以及 Skynet 的 **`LUA_SERVICE`** 等）决定；**`require`** 的搜索与 **`lua_path`**、**`luaservice`** 拼接有关。改路径前通读根目录 **`config`** 与 **`skynet_lib/loader.lua`**。
+
+## 入口与辅助位置
+
+- **`game.lua`**：随 **`game`** 服务启动的主逻辑，集中 **`skynet.newservice(...)`** 与 **`config.init()`** 等顺序。
+- **`game_start.lua`**：引导进程时通常只负责拉起 **`game`** 等最小集合。
+- **`world/adm.lua`**：对外调试、管理服务器的入口之一。
+- **`db/`**：业务与其它模块可复用的 DB 相关封装。
+- **`conf/`**：统一存放配置表（策划/业务配置数据）。新增配置优先放在该目录，不要零散放到其它业务目录。
+- **正式客户端**：`share2/client_project` Unity 工程（XLua、`Assets/Scripts`、`Assets/ScriptLua`）；AI 入口见 **`client_project/AI-HUB.md`**。  
+- **`client/`**（含 **`client2`**、`Proto.lua` 等）：历史/联调用建议客户端；协议定义以 **`skynet_lib/Proto.lua`** 与 **`client_project/Assets/ScriptLua/Proto.lua`** 为主力双端同步，若仍使用 `game/client` 联调则需三者对齐（见 **`add-protocol`** Skill）。
+
+## 服务器分层（规划态）
+
+整体分层大致为：客户端 → 网关 → **role** 服务 → 其它业务/管理公共服务。仓库内若**没有**跨服调度、跨服场景等实现，不要假定它们已存在或已实现；新增设计时与当前代码对照，避免虚构已完成的跨服能力。
