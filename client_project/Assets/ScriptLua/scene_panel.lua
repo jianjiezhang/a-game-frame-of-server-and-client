@@ -22,6 +22,8 @@ local __obj_data = {}       -- id -> obj 数据（供业务层查询）
 local __last_slice_x = nil
 local __last_slice_z = nil
 local __in_scene = false
+-- 战斗状态转圈圈记录：obj_id -> { origin_tx, origin_tz, start_time }
+local __battle_circle = {}
 
 local view_target_pos
 local CLICK_MOVE_THRESHOLD = 5
@@ -54,6 +56,13 @@ local k_scene_type_monster = 3
 local k_scene_type_boss = 4
 local k_scene_type_troop = 5
 local k_scene_type_tank = 6
+
+local k_scene_state_idle = 0
+local k_scene_state_battle = 2
+
+-- 战斗状态转圈圈配置
+local BATTLE_CIRCLE_RADIUS = 10
+local BATTLE_CIRCLE_SPEED = 90   -- 角度/秒，90°/s 约 4 秒转一圈
 
 
 
@@ -212,10 +221,12 @@ function scene_panel.EnterScene(pos, objs, troops, tank)
     if objs then
         for _, obj in pairs(objs) do
             __obj_data[obj.id] = obj
+            scene_panel.ApplyBattleCircle(obj)
         end
     end
     if tank and tank.id then
         __obj_data[tank.id] = tank
+        scene_panel.ApplyBattleCircle(tank)
     end
     sync_objects()
 
@@ -238,6 +249,7 @@ function scene_panel.UpdateSlices(objs)
     if objs then
         for _, obj in pairs(objs) do
             __obj_data[obj.id] = obj
+            scene_panel.ApplyBattleCircle(obj)
         end
     end
     sync_objects()
@@ -247,6 +259,7 @@ function scene_panel.AddObj(obj)
     if not obj then return end
     __obj_data[obj.id] = obj
     sync_objects()
+    scene_panel.ApplyBattleCircle(obj)
 end
 
 function scene_panel.AddTank(obj)
@@ -264,6 +277,7 @@ function scene_panel.AddTank(obj)
         local_tank_pos = obj.pos
         move_smoother.OnServerPos(obj.pos, true)
     end
+    scene_panel.ApplyBattleCircle(obj)
 end
 
 function scene_panel.SyncTank(obj)
@@ -276,6 +290,7 @@ function scene_panel.SyncTank(obj)
         local_tank_pos = obj.pos
         move_smoother.OnServerPos(obj.pos, true)
     end
+    scene_panel.ApplyBattleCircle(obj)
 end
 
 function scene_panel.OnSliceLeave(obj)
@@ -287,6 +302,35 @@ function scene_panel.OnSliceLeave(obj)
         move_smoother.Remove(obj.id)
     end
     __obj_data[obj.id] = nil
+end
+
+-- ============================================================
+-- 战斗状态转圈圈
+-- ============================================================
+
+--- 根据对象 state 决定是否开始/结束转圈圈
+function scene_panel.ApplyBattleCircle(obj)
+    if not obj or not obj.id then return end
+    local is_battle = obj.state == k_scene_state_battle
+    if is_battle then
+        if not __battle_circle[obj.id] then
+            local cur = move_smoother.GetCurrentPos(obj.id)
+            local tx, tz
+            if cur then
+                tx, tz = cur.tx, cur.tz
+            else
+                tx, tz = (obj.pos and obj.pos.tx) or 0, (obj.pos and obj.pos.tz) or 0
+            end
+            __battle_circle[obj.id] = {
+                origin_tx = tx,
+                origin_tz = tz,
+                start_time = os.time(),
+                angle = 0,
+            }
+        end
+    else
+        __battle_circle[obj.id] = nil
+    end
 end
 
 function scene_panel.LeaveScene()
@@ -307,6 +351,7 @@ function scene_panel.LeaveScene()
     tank_move_dir = nil
     tank_move_timer = 0
     __in_scene = false
+    __battle_circle = {}
 end
 
 function scene_panel.get_troop(index)
@@ -435,7 +480,10 @@ function scene_panel.Update()
 
         tank_move_timer = tank_move_timer + (CS.UnityEngine.Time.deltaTime or 0.016)
         if tank_move_timer >= TANK_MOVE_INTERVAL and #tank_move_dir > 0 then
-            Main.send_tank_move(tank_move_dir)
+            -- 战斗状态不下发移动协议，只做本地转圈圈动画
+            if not __battle_circle[local_tank_id] then
+                Main.send_tank_move(tank_move_dir)
+            end
             move_smoother.OnLocalMove(tank_move_dir, TANK_STEP)
             tank_move_timer = 0
         end
@@ -499,6 +547,19 @@ function scene_panel.Update()
             end
         end
     end
+
+    -- 战斗状态转圈圈：每帧计算并覆盖插值目标
+    for id, circle in pairs(__battle_circle) do
+        local elapsed = os.time() - circle.start_time
+        local rad = (circle.angle + elapsed * BATTLE_CIRCLE_SPEED) * (math.pi / 180)
+        local tx = circle.origin_tx + BATTLE_CIRCLE_RADIUS * math.cos(rad)
+        local tz = circle.origin_tz + BATTLE_CIRCLE_RADIUS * math.sin(rad)
+        move_smoother.SetTarget(id, {tx = tx, tz = tz})
+        local go = __go_map[id]
+        if go then
+            go.transform.position = world_to_screen_pos(tx, tz)
+        end
+    end
 end
 
 function scene_panel.OnClose()
@@ -520,6 +581,7 @@ function scene_panel.OnClose()
     tank_move_dir = nil
     tank_move_timer = 0
     __in_scene = false
+    __battle_circle = {}
 end
 
 

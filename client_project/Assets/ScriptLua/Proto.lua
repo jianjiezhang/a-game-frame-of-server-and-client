@@ -40,6 +40,8 @@ Proto.m_scene_tank_move_toc = {__name = "m_scene_tank_move_toc", __mod = 3, erro
 Proto.m_scene_slice_leave_toc = {__name = "m_scene_slice_leave_toc", __mod = 3, error = 0, obj = {}}
 Proto.m_scene_march_tos = {__name = "m_scene_march_tos", __mod = 3, error = 0, troop_index = 0, target_id = 0, pos = {}}
 Proto.m_scene_march_toc = {__name = "m_scene_march_toc", __mod = 3, error = 0}
+Proto.m_scene_battle_damage_toc = {__name = "m_scene_battle_damage_toc", __mod = 3, error = 0, attacker_id = 0, target_id = 0, damage = 0, target_hp = 0, target_max_hp = 0, target_dead = false}
+Proto.m_scene_battle_end_toc = {__name = "m_scene_battle_end_toc", __mod = 3, error = 0, battle_id = 0, winner = "", left_hp = 0, right_hp = 0, left_objs = {}, right_objs = {}}
 
 
 local Module ={}

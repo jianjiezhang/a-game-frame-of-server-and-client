@@ -45,8 +45,4 @@ function scene_troop:gen_pobj()
     end
 end
 
-function scene_troop:update_pobj()
-    self:gen_pobj()
-end
-
 return scene_troop

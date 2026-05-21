@@ -5,8 +5,7 @@ local __objs = {}
 local __check_interval = 100 -- ms
 
 local function get_collision_radius()
-    local conf = scene.find_config(scene.get_typeid())
-    return (conf and conf.collision_radius) or 2
+    return 1
 end
 
 local function check_collision(obj1, obj2, radius)

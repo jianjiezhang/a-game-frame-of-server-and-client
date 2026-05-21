@@ -41,6 +41,7 @@ local function create_scene(typeid, is_system, ...)
     local pid = skynet.newservice(get_scene_name(typeid), id, typeid, is_system, ...)
     local scene = {id = id, typeid = typeid, pid = pid}
     add_scene(scene)
+    skynet.warn("create_scene:%s", skynet.vardump({id, pid, typeid, is_system, ...}))
     return scene
 end
 local function del_scene(id)
@@ -75,13 +76,19 @@ function scenemgr.send(...)
     skynet.send(__procname, "lua", ...)
 end
 function scenemgr.call(...)
-    skynet.call(__procname, "lua", ...)
+    return skynet.call(__procname, "lua", ...)
 end
 function scenemgr.create(...)
     return scenemgr.call("createn", ...)
 end
 function scenemgr.create_battle(...)
-    return scenemgr.call("createn", k_scene.KSCENE_BATTLE, false, ...)
+    return scenemgr.call("createn", k_scene.KSCENE_BATTLE, true, ...)
+end
+function scenemgr.testn()
+    return "testn"
+end
+function scenemgr.test()
+    return scenemgr.call("testn")
 end
 function scenemgr.createn(typeid, is_system, ...)
     local scene = create_scene(typeid, is_system, ...)

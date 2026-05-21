@@ -37,8 +37,8 @@ function scene_tank:gen_pobj()
     end
 end
 
-function scene_tank:update_pobj()
-    self:gen_pobj()
+function scene_tank:can_move()
+    return self.state == k_scene.KSCENE_STATE_IDLE
 end
 
 return scene_tank

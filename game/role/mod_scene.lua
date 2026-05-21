@@ -17,7 +17,7 @@ end
 function mod_scene.lcall(...)
     local pid = role_data.get_scene_pid()
     if pid then
-        skynet.call(pid, "lua", "scene",...)
+        return skynet.call(pid, "lua", "scene",...)
     end
 end
 function mod_scene.send_world(...)

@@ -1,6 +1,5 @@
-
-scene_battle_tank = setmetatable({}, scene_object)
-scene_battle_tank.__parent = scene_object
+scene_battle_tank = setmetatable({}, scene_battle_object)
+scene_battle_tank.__parent = scene_battle_object
 scene_battle_tank.__index = scene_battle_tank
 
 function scene_battle_tank:new(id, pos, extra)
@@ -35,10 +34,6 @@ function scene_battle_tank:gen_pobj()
     if self.role_id then
         self.pobj.role_id = self.role_id
     end
-end
-
-function scene_battle_tank:update_pobj()
-    self:gen_pobj()
 end
 
 return scene_battle_tank

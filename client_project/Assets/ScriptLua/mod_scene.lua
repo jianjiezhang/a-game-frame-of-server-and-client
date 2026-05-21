@@ -64,4 +64,12 @@ function mod_scene.m_scene_march_toc(args)
     print("[mod_scene] recv march_toc:", vardump(args))
 end
 
+function mod_scene.m_scene_battle_damage_toc(args)
+    print("[mod_scene] recv battle_damage:", vardump(args))
+end
+
+function mod_scene.m_scene_battle_end_toc(args)
+    print("[mod_scene] recv battle_end:", vardump(args))
+end
+
 return mod_scene

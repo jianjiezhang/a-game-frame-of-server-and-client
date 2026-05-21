@@ -32,8 +32,5 @@ function scene_boss:gen_pobj()
     end
 end
 
-function scene_boss:update_pobj()
-    self:gen_pobj()
-end
 
 return scene_boss

@@ -1154,7 +1154,7 @@ function skynet.timers_dispatch()
 	if not __timers then
 		return
 	end
-	local ok, err = skynet.pcall(skynet.timer_loop)
+	local ok, err = skynet.catch(skynet.timer_loop)
 	if not ok then
 		skynet.error("skynet.timer_loop err: ", tostring(err))
 	end

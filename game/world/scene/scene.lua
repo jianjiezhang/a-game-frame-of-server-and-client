@@ -15,13 +15,17 @@ local function get_troop_born_pos()
 end
 
 local function try_start_battle(obj1, obj2)
-    if not obj1.can_battle or not obj2.can_battle then
+    if not scene.check_can_battle(obj1) or not scene.check_can_battle(obj2) then
         return
     end
+    if not scene.check_camp(obj1, obj2) then
+        return
+    end
+    
     obj1:stop_all_component()
     obj2:stop_all_component()
-    obj1.state = k_scene.KSCENE_STATE_BATTLE
-    obj2.state = k_scene.KSCENE_STATE_BATTLE
+    obj1:update_state(k_scene.KSCENE_STATE_BATTLE)
+    obj2:update_state(k_scene.KSCENE_STATE_BATTLE)
     local battle_data = {
         left = {
             id = obj1.id,
@@ -36,12 +40,14 @@ local function try_start_battle(obj1, obj2)
             attr = obj2.attr,
         },
     }
+
     local cb = {"scene", "settle_battle"}
     local battle = scenemgr.create_battle(skynet.self(), battle_data, cb)
     if not battle then
         skynet.warn("battle: create_battle failed")
         return
     end
+    skynet.warn("try_start_battle: battle_data=%s", skynet.vardump(skynet.self(), battle_data, cb))
     __battles[battle.id] = {
         id = battle.id,
         pid = battle.pid,
@@ -54,6 +60,13 @@ end
 
 function scene.on_collision(args)
     try_start_battle(args.obj1, args.obj2)
+end
+
+function scene.check_can_battle(obj)
+    if obj.state == k_scene.KSCENE_STATE_BATTLE or not obj.can_battle then
+        return false
+    end
+    return true
 end
 
 function scene.join_battle(role_id, battle_id, unit_data)
@@ -74,28 +87,22 @@ function scene.join_battle(role_id, battle_id, unit_data)
 end
 
 function scene.settle_battle(result)
+    skynet.warn("battle end: result=%s", skynet.vardump(result))
     local battle_id = result.battle_id
     local battle = battle_id and __battles[battle_id]
     if battle then
         __battles[battle_id] = nil
     end
-    skynet.warn("battle end: battle_id=%s result=%s", tostring(battle_id), skynet.vardump(result))
+
     for _, side in ipairs({result.left, result.right}) do
         for _, unit in ipairs(side) do
             local obj = scene_objmgr.get(unit.id)
-            if not obj then
-                return
-            end
-            if unit.is_dead then
-                scene_collision.unregister(obj)
-                scene_objmgr.remove(obj.id)
-                obj:update_pobj()
-                scene.broadcast_obj(obj)
+            skynet.warn("scene.settle_battle: obj=%s", skynet.vardump(obj))
+            if obj.role_id then
+                obj:update_state(k_scene.KSCENE_STATE_IDLE)
+                obj:notify_broadcast()
             else
-                obj.state = k_scene.KSCENE_STATE_IDLE
-                obj.attr.hp = unit.hp
-                obj:update_pobj()
-                scene.broadcast_obj(obj)
+                obj:destroy()
             end
         end
     end
@@ -118,18 +125,23 @@ function scene.broadcast_pos(pos, proto)
 end
 
 local function obj_to_pobj(obj)
-    return obj and obj.pobj or obj
+    return obj.pobj
 end
 
 function scene.broadcast_obj(obj)
-    local pobj = obj.pobj or obj
-    local proto = Proto.new("m_scene_obj_toc", "obj", pobj)
+    local proto = obj:get_proto()
     scene.broadcast_pos(obj.pos, proto)
 end
 
 function scene.enter_obj(obj)
     scene_aoi.enter(obj)
     scene.broadcast_obj(obj)
+end
+
+function scene.destroy_obj(obj)
+    scene_objmgr.remove(obj.id)
+    scene_aoi.leave(obj)
+    scene.broadcast_leave_to_diff(obj, scene_map.get_slice(obj.pos))
 end
 
 function scene.move_obj(obj, new_pos)
@@ -194,7 +206,7 @@ function scene.create_tank(role_id, tank_pos)
         return
     end
     local tank = scene_objmgr.create(k_scene.KSCENE_TYPE_TANK, tank_pos, {
-        "role_id", role_id,
+        "role_id", role_id
     })
     role.tank = tank
     scene.enter_obj(tank)
@@ -227,6 +239,13 @@ function scene.leave(role_id)
     end
     scene_aoi.leave(role)
     scenemgr.leave(role_id)
+end
+
+function scene.check_camp(obj1, obj2)
+    if obj1.role_id and obj2.role_id  and obj1.role_id == obj2.role_id then
+        return false
+    end
+    return true
 end
 
 function scene.m_scene_enter_tos(args)
@@ -310,6 +329,9 @@ function scene.m_scene_tank_move_tos(args)
         return false, "error", 3
     end
     local tank = role.tank
+    if not tank:can_move() then
+        return true, "obj", obj_to_pobj(tank)
+    end
     local dirs = args.dir or {}
     local dx, dz = 0, 0
     for _, dir in ipairs(dirs) do
@@ -386,143 +408,6 @@ function scene.m_scene_march_tos(args)
     return true
 end
 
-function scene.test_march(role_id, pid, troop_index, target_id, pos)
-    -- 校验 troop
-    local role = scene_objmgr.get_role_obj(role_id)
-    if not role then
-        return false, "error", 1, "role not found"
-    end
-    if not troop_index or troop_index < 1 or troop_index > #(role.troops or {}) then
-        return false, "error", 2, "invalid troop_index"
-    end
-    local troop = role.troops[troop_index]
-    if not troop then
-        return false, "error", 2, "troop nil"
-    end
-    if troop.state == k_scene.KSCENE_STATE_MARCH then
-        return false, "error", 4, "troop already marching"
-    end
-
-    -- 校验目标
-    if target_id and target_id ~= 0 then
-        local target_obj = scene_objmgr.get(target_id)
-        if not target_obj then
-            return false, "error", 3, "target not found"
-        end
-    end
-
-    -- 记录初始状态
-    local start_pos = {tx = troop.pos.tx, tz = troop.pos.tz}
-    local start_time = stdin.time()
-
-    -- 启动行军
-    local ok = troop:march_start(target_id, pos)
-    if not ok then
-        return false, "error", 6, "march start failed"
-    end
-
-    -- 验证启动后状态
-    if troop.state ~= k_scene.KSCENE_STATE_MARCH then
-        return false, "error", 7, "troop state not marching after start"
-    end
-    local march_comp = troop:get_component(k_scene.KSCENE_COMPONENT_TYPE_MARCH)
-    if march_comp.target_id ~= (target_id or 0) then
-        return false, "error", 8, "march_comp.target_id mismatch"
-    end
-    if not target_id or target_id == 0 then
-        if not march_comp.target_pos then
-            return false, "error", 9, "march_comp.target_pos should be set"
-        end
-        if march_comp.target_pos.tx ~= pos.tx or march_comp.target_pos.tz ~= pos.tz then
-            return false, "error", 10, "march_comp.target_pos mismatch"
-        end
-    end
-
-    -- 模拟多次 tick，推进行军
-    local conf = scene.find_config(scene.get_typeid())
-    local tick_ms = (conf and conf.march and conf.march.tick_ms) or 100
-    local stop_dist = (conf and conf.march and conf.march.stop_dist) or 3
-    local arrive_dist = (conf and conf.march and conf.march.arrive_dist) or 1
-    local speed = (conf and conf.march and conf.march.speed) or 1
-    -- stdin.time() 单位为 10ms，tick_interval 需换算为该单位
-    local tick_interval = tick_ms / 10
-    local max_ticks = 200
-    local tick_count = 0
-
-    local target_pos
-    if target_id and target_id ~= 0 then
-        local target_obj = scene_objmgr.get(target_id)
-        target_pos = target_obj and target_obj.pos
-    else
-        target_pos = pos
-    end
-
-    if target_pos then
-        local dx = target_pos.tx - start_pos.tx
-        local dz = target_pos.tz - start_pos.tz
-        local total_dist = math.sqrt(dx * dx + dz * dz)
-        local threshold = (target_id and target_id ~= 0) and stop_dist or arrive_dist
-        -- step = speed * tick_ms / 1000 = speed * tick_ms / 10 / 100
-        local step = speed * tick_ms / 1000
-        local expected_ticks = math.ceil((total_dist - threshold) / step)
-        max_ticks = math.min(max_ticks, expected_ticks + 10)
-    end
-
-    for i = 1, max_ticks do
-        local comp = troop:get_component(k_scene.KSCENE_COMPONENT_TYPE_MARCH)
-        if comp and troop.state == k_scene.KSCENE_STATE_MARCH then
-            comp.last_tick_time = start_time + (i - 1) * tick_interval
-            comp:tick(troop.id)
-        end
-
-        tick_count = tick_count + 1
-        if troop.state ~= k_scene.KSCENE_STATE_MARCH then
-            if target_pos then
-                local dx = target_pos.tx - troop.pos.tx
-                local dz = target_pos.tz - troop.pos.tz
-                local arrived_dist = math.sqrt(dx * dx + dz * dz)
-                local threshold = (target_id and target_id ~= 0) and stop_dist or arrive_dist
-                if arrived_dist > threshold + 0.1 then
-                    return false, "error", 11,
-                        string.format("troop stopped too far from target: dist=%.2f, threshold=%.2f", arrived_dist, threshold)
-                end
-            end
-            break
-        end
-    end
-
-    if troop.state == k_scene.KSCENE_STATE_MARCH and tick_count >= max_ticks then
-        return false, "error", 12,
-            string.format("march did not finish after %d ticks, pos=(%.2f, %.2f)", tick_count, troop.pos.tx, troop.pos.tz)
-    end
-
-    -- 验证行军过程中位置在持续变化
-    if target_pos then
-        local dx = target_pos.tx - start_pos.tx
-        local dz = target_pos.tz - start_pos.tz
-        local total_dist = math.sqrt(dx * dx + dz * dz)
-        local moved_dx = troop.pos.tx - start_pos.tx
-        local moved_dz = troop.pos.tz - start_pos.tz
-        local moved_dist = math.sqrt(moved_dx * moved_dx + moved_dz * moved_dz)
-        if moved_dist < total_dist * 0.9 then
-            return false, "error", 13,
-                string.format("troop did not move enough: total=%.2f, moved=%.2f", total_dist, moved_dist)
-        end
-    end
-
-    -- 验证行军停止后状态已重置
-    if troop.state ~= k_scene.KSCENE_STATE_IDLE then
-        return false, "error", 14, "troop state not IDLE after march stopped"
-    end
-    if march_comp.target_id ~= nil or march_comp.target_pos ~= nil then
-        return false, "error", 15, "march_comp target not cleared after march stopped"
-    end
-
-    return true, "ok", 0, string.format(
-        "march test passed: start=(%.2f,%.2f) end=(%.2f,%.2f) ticks=%d",
-        start_pos.tx, start_pos.tz, troop.pos.tx, troop.pos.tz, tick_count
-    )
-end
 
 if SERVICE_NAME == "scene" then
 

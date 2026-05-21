@@ -1,6 +1,5 @@
-
-scene_battle_boss = setmetatable({}, scene_object)
-scene_battle_boss.__parent = scene_object
+scene_battle_boss = setmetatable({}, scene_battle_object)
+scene_battle_boss.__parent = scene_battle_object
 scene_battle_boss.__index = scene_battle_boss
 
 function scene_battle_boss:new(id, pos, extra)
@@ -35,10 +34,6 @@ function scene_battle_boss:gen_pobj()
     if self.role_id then
         self.pobj.role_id = self.role_id
     end
-end
-
-function scene_battle_boss:update_pobj()
-    self:gen_pobj()
 end
 
 return scene_battle_boss

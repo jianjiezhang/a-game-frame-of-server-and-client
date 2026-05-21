@@ -1,6 +1,5 @@
-
-scene_battle_monster = setmetatable({}, scene_object)
-scene_battle_monster.__parent = scene_object
+scene_battle_monster = setmetatable({}, scene_battle_object)
+scene_battle_monster.__parent = scene_battle_object
 scene_battle_monster.__index = scene_battle_monster
 
 function scene_battle_monster:new(id, pos, extra)
@@ -34,8 +33,6 @@ function scene_battle_monster:gen_pobj()
     end
 end
 
-function scene_battle_monster:update_pobj()
-    self:gen_pobj()
-end
+
 
 return scene_battle_monster

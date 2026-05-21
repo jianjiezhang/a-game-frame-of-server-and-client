@@ -48,6 +48,14 @@ function table.setkv(tab, ...)
     return tab
 end
 
+function table.mset(tab, tab2)
+    for k, v in pairs(tab2) do
+        tab[k] = v
+    end
+    return tab
+end
+
+
 --合并表
 function table.append(tab, ntab)
     for _, v in pairs(ntab) do

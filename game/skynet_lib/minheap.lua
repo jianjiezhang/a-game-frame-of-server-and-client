@@ -71,17 +71,17 @@ local function shift_down(obj, i)
         local right = left + 1
         local smallest = i
 
-        if left <= size and not obj.cmp(obj.nodes[smallest].value, obj.nodes[left].value) then
+        if left <= size and not obj.cmp(obj.nodes[smallest], obj.nodes[left]) then
             smallest = left
         end
-        if right <= size and not obj.cmp(obj.nodes[smallest].value, obj.nodes[right].value) then
+        if right <= size and not obj.cmp(obj.nodes[smallest], obj.nodes[right]) then
             smallest = right
         end
 
         if smallest == i then
             break
         end
-        swap(self, i, smallest)
+        swap(obj, i, smallest)
         i = smallest
     end
 end

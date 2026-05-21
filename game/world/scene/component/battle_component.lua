@@ -13,7 +13,7 @@ function battle_component:start(obj, enemy_team)
     self.obj = obj
     self.enemy_team = enemy_team
     self.last_attack_time = stdin.time()
-    obj.state = k_scene.KSCENE_STATE_BATTLE
+    obj:update_state(k_scene.KSCENE_STATE_BATTLE)
     obj:push_component(self)
     self.tick_interval = 100
     local now = stdin.time()
@@ -21,7 +21,7 @@ function battle_component:start(obj, enemy_team)
 end
 
 function battle_component:tick(obj_id)
-    if self.obj.state ~= k_scene.KSCENE_STATE_BATTLE then
+    if not self.obj:is_battle() then
         return
     end
     local now = stdin.time()
@@ -38,7 +38,7 @@ function battle_component:pick_enemy()
     local best = nil
     local best_hp = math.huge
     for _, enemy in pairs(self.enemy_team) do
-        if not enemy.is_dead and enemy.attr.hp > 0 and enemy.attr.hp < best_hp then
+        if not enemy:is_dead() and enemy.attr.hp > 0 and enemy.attr.hp < best_hp then
             best = enemy
             best_hp = enemy.attr.hp
         end
@@ -52,12 +52,10 @@ function battle_component:attack()
         return
     end
     local damage = self:calc_damage(self.obj.attr, target.attr)
-    target.attr.hp = math.max(0, target.attr.hp - damage)
+    local new_hp = math.max(0, target.attr.hp - damage)
+    target:update_attr_hp(new_hp)
     skynet.warn("battle attack: attacker_id=%d hp=%d target_id=%d hp=%d damage=%d",
         self.obj.id, self.obj.attr.hp, target.id, target.attr.hp, damage)
-    if target.attr.hp <= 0 then
-        target.is_dead = true
-    end
     target:update_pobj()
     scene_battle.broadcast_damage(self.obj.id, target.id, damage, target)
 end
@@ -69,7 +67,7 @@ function battle_component:calc_damage(attacker_attr, defender_attr)
 end
 
 function battle_component:stop(obj)
-    obj.state = k_scene.KSCENE_STATE_IDLE
+    obj:update_state(k_scene.KSCENE_STATE_IDLE)
     skynet.timer_remove(self.check_tick)
     obj:pop_component(self)
 end
