@@ -47,15 +47,20 @@ game_frame/
 │   │       ├── scene_battle_tank.lua
 │   │       ├── scene_battle_boss.lua
 │   │       ├── scene_battle_monster.lua
-│   │       └── component/        # 实体组件系统
+│   │       └── component/              # 实体组件系统
 │   │           ├── base_component.lua
 │   │           ├── march_component.lua  # 向目标行军，基于 tick 的移动
-│   │           └── battle_component.lua # 自动攻击、血量管理、定时器 tick
+│   │           ├── battle_component.lua # 自动攻击、血量管理、定时器 tick
+│   │           └── sub_components/     # battle_component 的子组件
+│   │               ├── skill_component.lua  # 技能管理（冷却、释放、效果）
+│   │               └── buff_component.lua    # Buff 管理（叠加、持续、属性修改、DOT）
 │   ├── role/                    # 每个角色的 Lua 服务（每个玩家一个）
 │   │   ├── mod_scene.lua       # 场景模块 — 将场景协议路由到场景服务
 │   │   └── ...
 │   ├── conf/                    # 静态配置
 │   │   ├── f_scene.lua         # 场景配置（大小、AOI 网格、行军参数、碰撞半径）
+│   │   ├── f_skill.lua         # 技能配置（效果类型、冷却、目标、属性加成）
+│   │   ├── f_buff.lua          # Buff 配置（属性修改、DOT 伤害、叠加层数）
 │   │   └── k_scene.lua         # 场景常量（类型 ID、状态、组件类型、事件）
 │   ├── db/                      # 数据库层
 │   ├── sql/                     # SQL 脚本（game.sql、create_db.sql、clear.sql）
@@ -138,6 +143,11 @@ role service（每个玩家，拥有玩家状态，路由到场景）
   1 = watchdog  （连接认证）
   2 = role      （玩家操作）
   3 = mod_scene （场景操作）
+
+常用场景协议：
+  m_scene_battle_join_tos/toc   — 玩家加入战斗场景（坦克视角）
+  m_scene_battle_damage_toc     — 伤害广播（attacker_id, target_id, damage, target_hp, target_dead）
+  m_scene_battle_end_toc       — 战斗结束广播（winner, left_hp, right_hp）
 ```
 
 所有协议定义在双方的 `Proto.lua` 中，添加新消息时必须保持同步。
@@ -157,20 +167,31 @@ role service（每个玩家，拥有玩家状态，路由到场景）
 
 每个游戏对象（`scene_object`）都有带类型的组件：
 - `march_component` — 将对象移向目标位置，在 `march_start()` 时触发
-- `battle_component` — 定时器触发对敌队自动攻击，管理血量，广播伤害
+- `battle_component` — 定时器触发对敌队自动攻击，管理血量，广播伤害。持有两个子组件：
+  - `skill_component` — 管理技能列表、冷却计时、吟唱（channeling）和立即释放、效果应用
+  - `buff_component` — 管理 Buff 叠加层数、持续时间、属性加成、DOT 伤害触发
 
 ### 战斗系统
 
 - 碰撞检测触发战斗创建
-- 双队伍自动攻击，基于 tick
+- `scene_battle` 管理双队伍自动战斗，每 100ms tick 检测结算条件
+- `battle_component` 持有 `skill_component` + `buff_component`：每次 tick 进行技能冷却检测、选择目标、释放技能
+- `skill_component` 支持吟唱（cast_time > 0）和立即释放两种释放模式；技能效果类型包括伤害、治疗、添加 Buff
+- `buff_component` 支持 Buff 叠加层数、属性修改（flat / percent）和 DOT（持续伤害）触发
 - 战斗结算条件：(1) 一方全部死亡，或 (2) 20 秒超时 → 比较总血量
-- 胜负结果 + 血量发送给双方玩家
+- 胜负结果 + 双方剩余血量通过 `m_scene_battle_damage_toc` / `m_scene_battle_end_toc` 广播给玩家
 
 ### 客户端移动系统
 
 - **预测**：本地坦克移动立即应用并发送到服务器
 - **修正**：比较服务器位置与预测位置；若偏差 > 阈值则修正
 - **插值**：所有远程对象以可配置速度进行插值
+
+### 客户端战斗状态同步
+
+- 服务器将对象 `state == BATTLE` 同步到客户端，客户端据此显示战斗动画
+- 战斗中的单位在场景中绕原点做圆周运动，己方坦克在战斗状态下客户端禁止移动指令
+- 伤害数字和战斗结束结果通过 `m_scene_battle_damage_toc` / `m_scene_battle_end_toc` 协议在客户端日志输出（可扩展为 UI 显示）
 
 ---
 
@@ -220,7 +241,11 @@ make -j$(nproc)
 | 场景配置 | `game/conf/f_scene.lua` | 每个场景的大小、行军参数、对象数量 |
 | 场景常量 | `game/conf/k_scene.lua` | 所有 typeid、状态、组件常量 |
 | 行军组件 | `game/world/scene/component/march_component.lua` | 基于 tick 的行军逻辑 |
-| 战斗组件 | `game/world/scene/component/battle_component.lua` | 自动攻击、伤害、血量 |
+| 战斗组件 | `game/world/scene/component/battle_component.lua` | 自动攻击、伤害、血量、定时器 tick |
+| 技能子组件 | `game/world/scene/component/sub_components/skill_component.lua` | 技能管理（冷却、释放、效果应用） |
+| Buff 子组件 | `game/world/scene/component/sub_components/buff_component.lua` | Buff 管理（叠加层数、持续时间、属性修改、DOT） |
+| 技能配置 | `game/conf/f_skill.lua` | 技能效果类型、冷却时间、目标、属性加成系数 |
+| Buff 配置 | `game/conf/f_buff.lua` | Buff 属性修改类型/值、DOT 伤害、叠加层数上限 |
 | 客户端网络 | `client_project/Assets/Scripts/Net.cs` | TCP 带帧收发 |
 | 客户端入口 | `client_project/Assets/ScriptLua/Main.lua` | 协议分发、命令路由 |
 | 场景界面 | `client_project/Assets/ScriptLua/scene_panel.lua` | 3D 场景渲染、相机、控制 |
