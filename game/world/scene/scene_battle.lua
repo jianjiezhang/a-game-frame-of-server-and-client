@@ -11,6 +11,9 @@ local __start_time
 local __result_reported = false
 local __player_role_ids = {}  -- 所有参战玩家 role_id 集合，key=role_id
 
+-- 兵种类型 → 拥有的技能id列表
+local __hash_skills
+
 
 local function register_player_role_id(role_id)
     if role_id and role_id ~= 0 then
@@ -100,12 +103,17 @@ local function on_battle_end(winner_side)
         table.insert(result.right, {id = obj.src_id, type = obj.type, hp = obj.attr.hp, max_hp = obj.attr.max_hp, is_dead = obj:is_dead()})
     end
     skynet.warn("===== BATTLE RESULT =====\n  battle_id=%d winner=%s\n  left_total_hp=%d  right_total_hp=%d",__battle_id, winner_str, left_hp, right_hp)
-    skynet.warn("scene_battle.on_battle_end: result=%s", skynet.vardump(__callback, __scene_pid, result))
-    skynet.send(__scene_pid, "lua", __callback[1], __callback[2], result)
+    skynet.warn("scene_battle.on_battle_end: result=%s", skynet.vardump(result))
+    if __callback then
+        skynet.send(__scene_pid, "lua", __callback[1], __callback[2], result)
+    end
     scene_battle.finish()
 end
 
 
+function scene_battle.get_unit_skills(unit_type)
+    return __hash_skills[unit_type] or { 1 }  -- 默认仅有普攻
+end
 function scene_battle.broadcast_damage(attacker_id, target_id, damage, target)
     local proto = Proto.new("m_scene_battle_damage_toc",
         "attacker_id", attacker_id,
@@ -198,7 +206,7 @@ function scene_battle.join(side, battle_data)
         skynet.error("scene_battle.join: failed to create unit, side=" .. side)
         return
     end
-
+    obj:add_component(battle_component)
     obj:battle_start(enemy_team)
     register_obj_role_id(obj)
     table.insert(team, obj)
@@ -229,6 +237,11 @@ function scene_battle.init(id, typeid, is_system, scene_pid, battle_data, callba
     __callback = callback
     __result_reported = false
     __start_time = stdin.time()
+    __hash_skills = {     
+        [k_scene.KSCENE_TYPE_BATTLE_TANK] = { 1, 2, 3 },
+        [k_scene.KSCENE_TYPE_BATTLE_MONSTER] = { 1, 2, 3 },
+        [k_scene.KSCENE_TYPE_BATTLE_BOSS] = { 1, 2, 3 },
+        [k_scene.KSCENE_TYPE_BATTLE_TROOP] = { 1, 2, 3 }}
 
     scene_objmgr.init()
     scene_objmgr.register_class(k_scene.KSCENE_TYPE_BATTLE_TANK,   scene_battle_tank)

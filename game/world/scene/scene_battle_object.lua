@@ -8,7 +8,16 @@ scene_battle_object.__index = scene_battle_object
 function scene_battle_object:new(id, pos)
     local obj = scene_battle_object.__parent:new(id, pos)
     obj.attr = {}
+    obj.base_attr = {}  -- 原始基础属性，buff生效前的值
     return setmetatable(obj, self)
+end
+
+-- 将当前attr备份为base_attr，通常在战斗开始时调用
+function scene_battle_object:save_base_attr()
+    self.base_attr = {}
+    for k, v in pairs(self.attr) do
+        self.base_attr[k] = v
+    end
 end
 
 function scene_battle_object:update_attr(...)
@@ -32,6 +41,7 @@ function scene_battle_object:notify_role()
 end
 
 function scene_battle_object:battle_start(enemy_team)
+    self:save_base_attr()
     local comp = self:get_component(k_scene.KSCENE_COMPONENT_TYPE_BATTLE)
     if not comp then
         return
@@ -53,6 +63,13 @@ end
 
 function scene_battle_object:is_battle()
     return self.state == k_scene.KSCENE_STATE_BATTLE
+end
+
+function scene_battle_object:add_buff(buff_id)
+    local battle_comp = self:get_component(k_scene.KSCENE_COMPONENT_TYPE_BATTLE)
+    if battle_comp and battle_comp.__buff then
+        battle_comp.__buff:add_buff(buff_id)
+    end
 end
 
 return scene_battle_object

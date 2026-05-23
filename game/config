@@ -6,7 +6,7 @@ game_root = "./"
 --snax = skynet_root.."examples/?.lua;"..skynet_root.."test/?.lua"
 lua_path = game_root .. "skynet_lib/?.lua;" .. game_root .. "db/?.lua;"..game_root.."conf/?.lua;"
 lua_cpath = skynet_root .. "luaclib/?.so;" .. game_root .. "skynet_clib/?.so;"
-luaservice = game_root.."skynet_service/?.lua;"..game_root.."?.lua;"..game_root.."world/?.lua;"..game_root.."role/?.lua;"..game_root.."world/scene/?.lua;"..game_root.."world/scene/component/?.lua;"
+luaservice = game_root.."skynet_service/?.lua;"..game_root.."?.lua;"..game_root.."world/?.lua;"..game_root.."role/?.lua;"..game_root.."world/scene/?.lua;"..game_root.."world/scene/component/?.lua;"..game_root.."world/scene/component/sub_components/?.lua;"
 lualoader = game_root .. "skynet_lib/loader.lua"
 
 lua_path = lua_path .. luaservice

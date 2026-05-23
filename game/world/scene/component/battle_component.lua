@@ -1,4 +1,7 @@
 
+-- 战斗组件（主组件）：持有 skill/buff 子组件，调度战斗流程
+-- 子组件不注册到 scene_object_base，仅由 battle_component 内部使用
+
 battle_component = {}
 battle_component.__parent = base_component
 battle_component.__index = battle_component
@@ -15,6 +18,12 @@ function battle_component:start(obj, enemy_team)
     self.last_attack_time = stdin.time()
     obj:update_state(k_scene.KSCENE_STATE_BATTLE)
     obj:push_component(self)
+
+    -- 创建子组件
+    local skill_ids = scene_battle.get_unit_skills(obj.type)
+    self.__skill = skill_component:new(self, obj, skill_ids)
+    self.__buff = buff_component:new(self, obj)
+
     self.tick_interval = 100
     local now = stdin.time()
     skynet.timer_push_ends(battle_component.check_tick, now + self.tick_interval / 10, obj.id)
@@ -25,13 +34,41 @@ function battle_component:tick(obj_id)
         return
     end
     local now = stdin.time()
+
+    -- 调度子组件
+    self.__skill:tick()
+    self.__skill:tick_cast()
+    self.__buff:tick()
+
+    -- 普攻冷却检查
     local elapsed = now - self.last_attack_time
-    local interval = 1.0 / (self.obj.attr and self.obj.attr.attack_speed or 1.0) * 1000 --每次多少毫秒
+    local interval = 1.0 / (self.obj.attr and self.obj.attr.attack_speed or 1.0) * 1000
     if elapsed * 10 >= interval then
-        self:attack()
+        self:try_attack()
         self.last_attack_time = now
     end
+
     skynet.timer_push_ends(battle_component.check_tick, now + self.tick_interval / 10, obj_id)
+end
+
+function battle_component:try_attack()
+    local target = self:pick_enemy()
+    if not target then
+        return
+    end
+    -- 随机选择一个可用技能
+    local skill_list = {}
+    for sid, _ in pairs(self.__skill.skills) do
+        if self.__skill:get_cooldown(sid) <= 0 then
+            skill_list[#skill_list + 1] = sid
+        end
+    end
+    if #skill_list == 0 then
+        return
+    end
+    local idx = math.random(1, #skill_list)
+    local skill_id = skill_list[idx]
+    self.__skill:try_cast(skill_id, target)
 end
 
 function battle_component:pick_enemy()
@@ -46,29 +83,9 @@ function battle_component:pick_enemy()
     return best
 end
 
-function battle_component:attack()
-    local target = self:pick_enemy()
-    if not target then
-        return
-    end
-    local damage = self:calc_damage(self.obj.attr, target.attr)
-    local new_hp = math.max(0, target.attr.hp - damage)
-    target:update_attr_hp(new_hp)
-    skynet.warn("battle attack: attacker_id=%d hp=%d target_id=%d hp=%d damage=%d",
-        self.obj.id, self.obj.attr.hp, target.id, target.attr.hp, damage)
-    target:update_pobj()
-    scene_battle.broadcast_damage(self.obj.id, target.id, damage, target)
-end
-
-function battle_component:calc_damage(attacker_attr, defender_attr)
-    local attack = attacker_attr and attacker_attr.attack or 0
-    local defend = defender_attr and defender_attr.defend or 0
-    return math.max(1, attack - defend)
-end
-
 function battle_component:stop(obj)
     obj:update_state(k_scene.KSCENE_STATE_IDLE)
-    skynet.timer_remove(self.check_tick)
+    skynet.timer_remove(battle_component.check_tick, obj.id)
     obj:pop_component(self)
 end
 
